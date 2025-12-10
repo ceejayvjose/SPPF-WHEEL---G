@@ -1,0 +1,5 @@
+{
+  "name": "SpinMaster Roulette",
+  "description": "A high-performance interactive roulette wheel with participant management, real-time physics-based spinning, and a dynamic zoom view for the active selection.",
+  "requestFramePermissions": []
+}
