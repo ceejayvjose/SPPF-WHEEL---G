@@ -4,7 +4,7 @@ import AdminPanel from './components/AdminPanel';
 import ZoomView from './components/ZoomView';
 import WinnerHistory, { WinnerRecord } from './components/WinnerHistory';
 import { Participant, WheelState } from './types';
-import { Menu, Play, RefreshCw, Volume2, VolumeX, History, X } from 'lucide-react';
+import { Menu, Play, RefreshCw, Volume2, VolumeX, History, X, ChevronLeft, ChevronRight, Monitor, Maximize2 } from 'lucide-react';
 import * as d3 from 'd3';
 import { NAME_LIST } from './names';
 
@@ -45,10 +45,12 @@ function App() {
   
   const [winners, setWinners] = useState<WinnerRecord[]>([]);
 
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  // UI State
+  const [showAdmin, setShowAdmin] = useState(true);
+  const [showHistory, setShowHistory] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [spinDuration, setSpinDuration] = useState(8); // Seconds
+  const [wheelSize, setWheelSize] = useState(600);
   
   // Animation State
   const [wheelState, setWheelState] = useState<WheelState>({
@@ -68,6 +70,33 @@ function App() {
   // Audio Context
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastTickIndexRef = useRef<number>(-1);
+
+  // Dynamic Wheel Sizing for "Full Screen" feel
+  useEffect(() => {
+    const handleResize = () => {
+      // Calculate available space
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      // Reduce width based on open panels (approximate widths)
+      // Admin is ~320px-384px, History is ~288px-320px
+      let availableWidth = width;
+      if (window.innerWidth >= 1024) { // lg breakpoint
+        if (showAdmin) availableWidth -= 350;
+        if (showHistory) availableWidth -= 300;
+      }
+
+      // We want the wheel to be as large as possible but fit within constraints
+      // Max height factor 0.75 leaves room for top zoom view and bottom controls
+      const size = Math.min(height * 0.75, availableWidth * 0.9, 900);
+      setWheelSize(size);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial calc
+    
+    return () => window.removeEventListener('resize', handleResize);
+  }, [showAdmin, showHistory]);
 
   useEffect(() => {
     participantsRef.current = participants;
@@ -261,19 +290,31 @@ function App() {
     setWheelState(prev => ({ ...prev, winner: null, rotation: 0 }));
   };
 
+  const toggleStreamMode = () => {
+    const isModeActive = !showAdmin && !showHistory;
+    // If stream mode is active (both hidden), restore them. Otherwise hide both.
+    if (isModeActive) {
+      setShowAdmin(true);
+      setShowHistory(true);
+    } else {
+      setShowAdmin(false);
+      setShowHistory(false);
+    }
+  };
+
   return (
-    <div className="flex h-screen bg-slate-900 text-white overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-900 text-white overflow-hidden font-sans relative">
       {/* Mobile Header Buttons */}
       <div className="lg:hidden absolute top-0 left-0 right-0 p-4 z-50 flex justify-between items-center pointer-events-none">
          <button 
            onClick={() => setShowAdmin(true)} 
-           className="pointer-events-auto p-2 bg-slate-800 rounded-lg shadow-lg text-white border border-slate-700"
+           className="pointer-events-auto p-2 bg-slate-800 rounded-lg shadow-lg text-white border border-slate-700 hover:bg-slate-700"
          >
            <Menu size={24} />
          </button>
          <button 
            onClick={() => setShowHistory(true)} 
-           className="pointer-events-auto p-2 bg-slate-800 rounded-lg shadow-lg text-white border border-slate-700"
+           className="pointer-events-auto p-2 bg-slate-800 rounded-lg shadow-lg text-white border border-slate-700 hover:bg-slate-700"
          >
            <History size={24} />
          </button>
@@ -281,10 +322,13 @@ function App() {
 
       {/* Admin Panel (Left) */}
       <div className={`
-        fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out lg:relative lg:transform-none lg:w-80 xl:w-96
-        ${showAdmin ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        fixed inset-y-0 left-0 z-40 bg-slate-800
+        transform transition-all duration-300 ease-in-out
+        ${showAdmin ? 'translate-x-0' : '-translate-x-full'}
+        lg:relative lg:transform-none
+        ${showAdmin ? 'lg:w-80 xl:w-96 opacity-100' : 'lg:w-0 lg:overflow-hidden opacity-100 lg:opacity-0'}
       `}>
-        <div className="h-full flex flex-col relative">
+        <div className="h-full flex flex-col relative w-full lg:w-80 xl:w-96">
             <button 
               onClick={() => setShowAdmin(false)} 
               className="lg:hidden absolute top-4 right-4 p-2 text-slate-400 hover:text-white z-50"
@@ -306,82 +350,162 @@ function App() {
       </div>
 
       {/* Main Content Area (Center) */}
-      <div className="flex-1 flex flex-col relative overflow-hidden">
+      <div className="flex-1 flex flex-col relative overflow-hidden transition-all duration-300">
         
+        {/* Desktop Toggle Controls */}
+        <div className="hidden lg:flex absolute top-4 left-4 z-50 gap-2">
+           {!showAdmin && (
+             <button 
+               onClick={() => setShowAdmin(true)}
+               className="p-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 backdrop-blur-sm transition-all shadow-lg"
+               title="Show Settings"
+             >
+               <ChevronRight size={20} />
+             </button>
+           )}
+           {showAdmin && (
+             <button 
+               onClick={() => setShowAdmin(false)}
+               className="p-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 backdrop-blur-sm transition-all shadow-lg"
+               title="Hide Settings"
+             >
+               <ChevronLeft size={20} />
+             </button>
+           )}
+        </div>
+
+        <div className="hidden lg:flex absolute top-4 right-4 z-50 gap-2">
+            {/* Stream Mode Toggle */}
+            <button 
+               onClick={toggleStreamMode}
+               className={`p-2 rounded-lg border backdrop-blur-sm transition-all shadow-lg flex items-center gap-2 ${
+                 !showAdmin && !showHistory 
+                 ? 'bg-indigo-600 border-indigo-500 text-white' 
+                 : 'bg-slate-800/50 hover:bg-slate-800 border-slate-700/50 text-slate-300 hover:text-white'
+               }`}
+               title="Stream Mode (Hide Sidebars)"
+             >
+               <Monitor size={20} />
+               <span className="text-xs font-bold uppercase">{!showAdmin && !showHistory ? 'Stream Mode' : 'View'}</span>
+             </button>
+
+           {showHistory && (
+             <button 
+               onClick={() => setShowHistory(false)}
+               className="p-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 backdrop-blur-sm transition-all shadow-lg"
+               title="Hide History"
+             >
+               <ChevronRight size={20} />
+             </button>
+           )}
+           {!showHistory && (
+             <button 
+               onClick={() => setShowHistory(true)}
+               className="p-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 backdrop-blur-sm transition-all shadow-lg"
+               title="Show History"
+             >
+               <ChevronLeft size={20} />
+             </button>
+           )}
+        </div>
+
         {/* Top Area: Zoom/Winner Display */}
-        <div className="h-1/4 min-h-[180px] p-6 flex flex-col items-center justify-center relative z-10">
-           <ZoomView 
-             currentParticipant={activeParticipant} 
-             isSpinning={wheelState.isSpinning}
-             winner={wheelState.winner}
-           />
+        <div className="h-[25vh] min-h-[160px] p-4 flex flex-col items-center justify-end relative z-10 pointer-events-none">
+           <div className="pointer-events-auto">
+             <ZoomView 
+               currentParticipant={activeParticipant} 
+               isSpinning={wheelState.isSpinning}
+               winner={wheelState.winner}
+             />
+           </div>
         </div>
 
         {/* Center: The Wheel */}
-        <div className="flex-1 flex items-center justify-center relative p-4 lg:-mt-10">
-          <div className="relative">
-             <div className="absolute inset-0 bg-indigo-500 blur-3xl opacity-20 rounded-full scale-110 pointer-events-none"></div>
+        <div className="flex-1 flex items-center justify-center relative p-4">
+          <div className="relative transition-all duration-500 ease-out">
+             {/* Glow Effect */}
+             <div 
+               className="absolute inset-0 bg-indigo-500 blur-3xl rounded-full pointer-events-none transition-opacity duration-1000"
+               style={{ 
+                 opacity: wheelState.isSpinning ? 0.3 : 0.15,
+                 transform: 'scale(1.1)' 
+               }}
+             ></div>
              
              {participants.length > 0 ? (
                 <Wheel 
                   participants={participants} 
                   rotation={wheelState.rotation} 
-                  size={Math.min(window.innerHeight * 0.5, window.innerWidth * 0.9, 600)}
+                  size={wheelSize}
                 />
              ) : (
-               <div className="text-slate-500 font-medium text-lg">Add participants to start</div>
+               <div className="text-slate-500 font-medium text-lg bg-slate-800/50 px-6 py-4 rounded-xl border border-slate-700 backdrop-blur-sm">
+                 Add participants to start
+               </div>
              )}
           </div>
         </div>
 
         {/* Bottom: Controls */}
-        <div className="h-24 bg-slate-800/50 backdrop-blur-md border-t border-slate-700 flex items-center justify-center gap-6 z-20">
-           <button
-             onClick={() => {
-                setSoundEnabled(!soundEnabled);
-                initAudio();
-             }}
-             className={`p-3 rounded-full transition-all ${soundEnabled ? 'bg-slate-700 text-indigo-400' : 'bg-slate-700 text-slate-500'}`}
-             title={soundEnabled ? "Sound On" : "Sound Off"}
-           >
-             {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-           </button>
+        <div className="h-24 flex items-center justify-center gap-6 z-20 pb-6 pointer-events-none">
+           {/* Control Bar Container */}
+           <div className={`
+             pointer-events-auto flex items-center gap-4 bg-slate-800/80 backdrop-blur-md border border-slate-700/50 p-2 rounded-2xl shadow-2xl transition-all duration-300
+             ${wheelState.isSpinning ? 'opacity-50 hover:opacity-100' : 'opacity-100'}
+           `}>
+             <button
+               onClick={() => {
+                  setSoundEnabled(!soundEnabled);
+                  initAudio();
+               }}
+               className={`p-4 rounded-xl transition-all ${soundEnabled ? 'bg-slate-700 text-indigo-400 hover:bg-slate-600' : 'bg-slate-700/50 text-slate-500 hover:bg-slate-700'}`}
+               title={soundEnabled ? "Sound On" : "Sound Off"}
+             >
+               {soundEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}
+             </button>
 
-           <button
-             onClick={handleSpin}
-             disabled={wheelState.isSpinning || participants.length < 2}
-             className={`
-               group relative flex items-center gap-3 px-8 py-4 rounded-full font-bold text-lg shadow-lg transition-all transform
-               ${wheelState.isSpinning || participants.length < 2
-                 ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                 : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white hover:scale-105 active:scale-95 shadow-indigo-500/25'}
-             `}
-           >
-             <span className={`${wheelState.isSpinning ? 'animate-spin' : ''}`}>
-               {wheelState.isSpinning ? <RefreshCw size={24} /> : <Play size={24} fill="currentColor" />}
-             </span>
-             {wheelState.isSpinning ? 'SPINNING...' : 'SPIN WHEEL'}
-           </button>
+             <button
+               onClick={handleSpin}
+               disabled={wheelState.isSpinning || participants.length < 2}
+               className={`
+                 group relative flex items-center gap-3 px-10 py-4 rounded-xl font-bold text-xl shadow-lg transition-all transform
+                 ${wheelState.isSpinning || participants.length < 2
+                   ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                   : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white hover:scale-105 active:scale-95 shadow-indigo-500/25'}
+               `}
+             >
+               <span className={`${wheelState.isSpinning ? 'animate-spin' : ''}`}>
+                 {wheelState.isSpinning ? <RefreshCw size={24} /> : <Play size={24} fill="currentColor" />}
+               </span>
+               {wheelState.isSpinning ? 'SPINNING...' : 'SPIN'}
+             </button>
+           </div>
         </div>
         
         {/* Background Gradients */}
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none -z-10">
-           <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-900/20 rounded-full blur-3xl"></div>
-           <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-900/20 rounded-full blur-3xl"></div>
+           <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-purple-900/10 rounded-full blur-[100px]"></div>
+           <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-indigo-900/10 rounded-full blur-[100px]"></div>
+           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-slate-950/50 radial-gradient"></div>
         </div>
       </div>
 
       {/* Winner History (Right) */}
       <div className={`
-        fixed inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out lg:relative lg:transform-none lg:w-72 xl:w-80
-        ${showHistory ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+        fixed inset-y-0 right-0 z-40 bg-slate-800
+        transform transition-all duration-300 ease-in-out
+        ${showHistory ? 'translate-x-0' : 'translate-x-full'}
+        lg:relative lg:transform-none
+        ${showHistory ? 'lg:w-72 xl:w-80 opacity-100' : 'lg:w-0 lg:overflow-hidden opacity-100 lg:opacity-0'}
       `}>
-          <WinnerHistory 
-            winners={winners} 
-            onClear={() => setWinners([])}
-            isOpen={showHistory}
-            onClose={() => setShowHistory(false)}
-          />
+          <div className="h-full w-full lg:w-72 xl:w-80">
+            <WinnerHistory 
+              winners={winners} 
+              onClear={() => setWinners([])}
+              isOpen={showHistory}
+              onClose={() => setShowHistory(false)}
+            />
+          </div>
       </div>
     </div>
   );
