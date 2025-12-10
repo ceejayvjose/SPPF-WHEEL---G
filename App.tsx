@@ -4,7 +4,7 @@ import AdminPanel from './components/AdminPanel';
 import ZoomView from './components/ZoomView';
 import WinnerHistory, { WinnerRecord } from './components/WinnerHistory';
 import { Participant, WheelState } from './types';
-import { Menu, Play, RefreshCw, Volume2, VolumeX, History, X, ChevronLeft, ChevronRight, Monitor, Maximize2 } from 'lucide-react';
+import { Menu, Play, RefreshCw, Volume2, VolumeX, History, X, ChevronLeft, ChevronRight, Monitor } from 'lucide-react';
 import * as d3 from 'd3';
 import { NAME_LIST } from './names';
 
@@ -51,6 +51,7 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [spinDuration, setSpinDuration] = useState(8); // Seconds
   const [wheelSize, setWheelSize] = useState(600);
+  const [isLandscape, setIsLandscape] = useState(false);
   
   // Animation State
   const [wheelState, setWheelState] = useState<WheelState>({
@@ -71,30 +72,60 @@ function App() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastTickIndexRef = useRef<number>(-1);
 
-  // Dynamic Wheel Sizing for "Full Screen" feel
+  // Dynamic Wheel Sizing for "Full Screen" feel and layout adjustment
   useEffect(() => {
     const handleResize = () => {
-      // Calculate available space
+      // 1. Determine Main Area Dimensions
       const width = window.innerWidth;
       const height = window.innerHeight;
       
-      // Reduce width based on open panels (approximate widths)
-      // Admin is ~320px-384px, History is ~288px-320px
-      let availableWidth = width;
-      if (window.innerWidth >= 1024) { // lg breakpoint
-        if (showAdmin) availableWidth -= 350;
-        if (showHistory) availableWidth -= 300;
+      let mainAreaWidth = width;
+      // We assume sidebars are strictly for Desktop (lg) breakpoint in terms of layout shift
+      if (width >= 1024) { 
+        if (showAdmin) mainAreaWidth -= 350; // Approx sidebar width
+        if (showHistory) mainAreaWidth -= 300; // Approx history width
       }
 
-      // We want the wheel to be as large as possible but fit within constraints
-      // Max height factor 0.75 leaves room for top zoom view and bottom controls
-      const size = Math.min(height * 0.75, availableWidth * 0.9, 900);
+      const controlsHeight = 120; // Approx height of bottom bar + padding
+      const mainAreaHeight = height - controlsHeight;
+
+      // 2. Determine Layout Mode (Landscape vs Portrait)
+      // If we have significantly more width than height, go landscape (side-by-side)
+      // But only if there is enough absolute width to justify it (e.g. > 800px)
+      const isWide = mainAreaWidth > 800 && (mainAreaWidth / mainAreaHeight) > 1.1;
+      setIsLandscape(isWide);
+
+      // 3. Calculate Wheel Size
+      let size = 500;
+      const margin = 40;
+
+      if (isWide) {
+        // Landscape: Wheel shares width with ZoomView (approx 30/70 split)
+        // ZoomView takes ~350px min, or 30%.
+        const zoomWidth = Math.max(350, mainAreaWidth * 0.3);
+        const wheelSpaceWidth = mainAreaWidth - zoomWidth - margin;
+        const wheelSpaceHeight = mainAreaHeight - margin;
+        
+        size = Math.min(wheelSpaceWidth, wheelSpaceHeight, 900);
+      } else {
+        // Portrait: Stacked. ZoomView is on top.
+        // Assume ZoomView takes ~25% height or min 160px
+        const zoomHeight = Math.max(160, mainAreaHeight * 0.25);
+        const wheelSpaceHeight = mainAreaHeight - zoomHeight - margin;
+        const wheelSpaceWidth = mainAreaWidth - margin;
+        
+        size = Math.min(wheelSpaceWidth, wheelSpaceHeight, 900);
+      }
+      
+      // Safety clamp
+      size = Math.max(200, size);
       setWheelSize(size);
     };
 
     window.addEventListener('resize', handleResize);
     handleResize(); // Initial calc
     
+    // Recalculate when UI toggles change
     return () => window.removeEventListener('resize', handleResize);
   }, [showAdmin, showHistory]);
 
@@ -409,45 +440,65 @@ function App() {
            )}
         </div>
 
-        {/* Top Area: Zoom/Winner Display */}
-        <div className="h-[25vh] min-h-[160px] p-4 flex flex-col items-center justify-end relative z-10 pointer-events-none">
-           <div className="pointer-events-auto">
-             <ZoomView 
-               currentParticipant={activeParticipant} 
-               isSpinning={wheelState.isSpinning}
-               winner={wheelState.winner}
-             />
+        {/* Dynamic Layout Container */}
+        <div className={`
+           flex-1 flex relative z-10 w-full min-h-0
+           ${isLandscape ? 'flex-row items-center' : 'flex-col items-center justify-end'}
+        `}>
+           
+           {/* Zoom View Section */}
+           <div className={`
+             pointer-events-none z-20 flex justify-center p-4 transition-all duration-500
+             ${isLandscape 
+                ? 'w-[35%] h-full flex-col items-end pr-8 justify-center order-1' 
+                : 'w-full h-[25vh] min-h-[160px] flex-col items-center justify-end order-1'
+             }
+           `}>
+             <div className="pointer-events-auto w-full max-w-sm">
+               <ZoomView 
+                 currentParticipant={activeParticipant} 
+                 isSpinning={wheelState.isSpinning}
+                 winner={wheelState.winner}
+               />
+             </div>
            </div>
-        </div>
 
-        {/* Center: The Wheel */}
-        <div className="flex-1 flex items-center justify-center relative p-4">
-          <div className="relative transition-all duration-500 ease-out">
-             {/* Glow Effect */}
-             <div 
-               className="absolute inset-0 bg-indigo-500 blur-3xl rounded-full pointer-events-none transition-opacity duration-1000"
-               style={{ 
-                 opacity: wheelState.isSpinning ? 0.3 : 0.15,
-                 transform: 'scale(1.1)' 
-               }}
-             ></div>
-             
-             {participants.length > 0 ? (
-                <Wheel 
-                  participants={participants} 
-                  rotation={wheelState.rotation} 
-                  size={wheelSize}
-                />
-             ) : (
-               <div className="text-slate-500 font-medium text-lg bg-slate-800/50 px-6 py-4 rounded-xl border border-slate-700 backdrop-blur-sm">
-                 Add participants to start
-               </div>
-             )}
-          </div>
+           {/* Wheel Section */}
+           <div className={`
+             flex items-center justify-center p-4 relative transition-all duration-500
+             ${isLandscape 
+                ? 'flex-1 h-full order-2' 
+                : 'flex-1 w-full order-2'
+             }
+           `}>
+              <div className="relative transition-all duration-500 ease-out">
+                 {/* Glow Effect */}
+                 <div 
+                   className="absolute inset-0 bg-indigo-500 blur-3xl rounded-full pointer-events-none transition-opacity duration-1000"
+                   style={{ 
+                     opacity: wheelState.isSpinning ? 0.3 : 0.15,
+                     transform: 'scale(1.1)' 
+                   }}
+                 ></div>
+                 
+                 {participants.length > 0 ? (
+                    <Wheel 
+                      participants={participants} 
+                      rotation={wheelState.rotation} 
+                      size={wheelSize}
+                    />
+                 ) : (
+                   <div className="text-slate-500 font-medium text-lg bg-slate-800/50 px-6 py-4 rounded-xl border border-slate-700 backdrop-blur-sm">
+                     Add participants to start
+                   </div>
+                 )}
+              </div>
+           </div>
+
         </div>
 
         {/* Bottom: Controls */}
-        <div className="h-24 flex items-center justify-center gap-6 z-20 pb-6 pointer-events-none">
+        <div className="h-24 flex flex-shrink-0 items-center justify-center gap-6 z-20 pb-6 pointer-events-none">
            {/* Control Bar Container */}
            <div className={`
              pointer-events-auto flex items-center gap-4 bg-slate-800/80 backdrop-blur-md border border-slate-700/50 p-2 rounded-2xl shadow-2xl transition-all duration-300
